@@ -1,0 +1,668 @@
+package main;
+
+import java.rmi.*;
+import java.rmi.registry.*;
+import java.rmi.server.*;
+
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+import java.util.ArrayList;
+import java.util.Random;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import pms.database.DatabaseConnection;
+
+public class Server extends UnicastRemoteObject implements ClientRequests {
+
+    private static final int port = 3333;
+    private static final String requestEndPoint = "ClientRequest";
+
+    public Server() throws RemoteException {
+    }
+
+    public static void main(String arg[]) throws SQLException, RemoteException {
+        try {
+            Server obj = new Server();
+            Registry Registry = LocateRegistry.createRegistry(port);
+            Registry.rebind(requestEndPoint, obj);
+            System.out.println("Server is Ready & Running @Port " + port + " ...");
+
+        } catch (Exception e) {
+            System.err.println("Server exception:" + e.toString());
+            e.printStackTrace();
+        }
+    }
+
+    public String registerClient() {
+        /* Test Connection */
+        return "I am ready to Register a client!";
+    }
+
+    public String[] getDashboardInfo(int companyID) {
+        try {
+            String sql
+                    = "SELECT * FROM \n"
+                    + "(SELECT COUNT(*) IN_VEHICLES FROM PARKED_CAR WHERE COMPANY_ID = " + companyID + " AND DATE_EXIT IS NULL) A,  /*IN VEHICLES*/\n"
+                    + "(SELECT COUNT(*) OUT_VEHICLES FROM PARKED_CAR WHERE COMPANY_ID = " + companyID + " AND DATE_EXIT IS NOT NULL AND DATE(DATE_ENTRY)=CURDATE()) B,  /*OUT VEHICLES*/\n"
+                    + "(SELECT COUNT(*) IN_OUT_VEHICLES FROM PARKED_CAR WHERE COMPANY_ID = " + companyID + " AND DATE(DATE_ENTRY)=CURDATE() /* IN & OUT VEHICLES*/) C";
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
+            ResultSet rs = ps.executeQuery();
+            while (rs.next()) {
+                return new String[]{rs.getString("IN_VEHICLES"), rs.getString("OUT_VEHICLES"), rs.getString("IN_OUT_VEHICLES")};
+            }
+            ps.close();
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        } finally {
+        }
+        return null;
+    }
+
+    public String greeting(int hour) {
+        if (hour >= 5 && hour < 12) {
+            return ("Good Morning,");
+        } else if (hour >= 12 && hour < 18) {
+            return ("Good Afternoon,");
+        } else {
+            return ("Good Evening,");
+        }
+    }
+
+    public int registerParkingLot(String companyID, String parkingLotNO, String descrption) {
+        String sql = "INSERT INTO PARKING_LOT (COMPANY_ID, PARKING_LOT_NO, DESCRIPTION) VALUES (" + companyID + ", '" + parkingLotNO + "', '" + descrption + "')";
+        int result;
+        try {
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
+            result = ps.executeUpdate();
+            ps.close();
+
+            return result;
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return 0;
+    }
+
+    public int parkACar(String companyID, String vehicleId, String parkingLotNO, String entryTime) {
+        String sql = "insert into parked_car (company_id, vehicle_id, parking_lot_id, date_entry, date_exit) "
+                + "values (" + companyID + ", " + vehicleId + ", (select max(id) from parking_lot where parking_lot.company_id = parked_car.company_id and "
+                + "PARKING_LOT_NO = '" + parkingLotNO + "'), '" + entryTime + "', null)";
+        int result;
+        try {
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
+            result = ps.executeUpdate();
+            ps.close();
+
+            return result;
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return 0;
+    }
+
+    public int registerClient(String firstName, String middleName, String lastName, String gender, String address, String mobile, String dateOfBirth, String jobTitle, String tin, String email,
+            String code, String licensePlate, String manufacturer, String model, String year) {
+
+        String sqlDriver = "INSERT INTO DRIVER (FIRST_NAME, MIDDLE_NAME, LAST_NAME, GENDER, ADDRESS, MOBILE, DATE_OF_BIRTH, JOB_TITLE, TIN, EMAIL)"
+                + "VALUES('" + firstName + "','" + middleName + "','" + lastName + "','" + gender + "','" + address + "','" + mobile + "', " + dateOfBirth + ",'" + jobTitle + "','" + tin + "','" + email + "')";
+        int result1, result2;
+
+        try {
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps1 = DatabaseConnection.getInstance().getConnection().prepareStatement(sqlDriver, Statement.RETURN_GENERATED_KEYS);
+            result1 = ps1.executeUpdate();
+
+            if (result1 == 1) {
+                ResultSet generatedKeys = ps1.getGeneratedKeys();
+
+                if (generatedKeys.next()) {
+                    String sqlVehicle = "INSERT INTO VEHICLE (code, license_plate, manufacturer, model, year, driver_id)"
+                            + "VALUES ( '" + code + "','" + licensePlate + "','" + manufacturer + "','" + model + "','" + year + "'," + generatedKeys.getInt(1) + ")";
+                    PreparedStatement ps2 = DatabaseConnection.getInstance().getConnection().prepareStatement(sqlVehicle);
+                    result2 = ps2.executeUpdate();
+                    ps2.close();
+                    if (result2 == 0) {/*If vehicle cannot be created Delete the Driver record*/
+                        String sqlDeleteDriver = "DELETE FROM DRIVER WHERE ID = " + generatedKeys.getInt(1);
+                        PreparedStatement ps3 = DatabaseConnection.getInstance().getConnection().prepareStatement(sqlDeleteDriver);
+                        result2 = ps3.executeUpdate();
+                        ps3.close();
+                        return 0;
+                        /* Return no success*/
+                    }
+                }
+            }
+
+            ps1.close();
+
+            return result1;
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return 0;
+    }
+
+    public int getTotalCount(String what, String[] parameters) {
+        String sql;
+        ResultSet rs;
+        int count = 0;
+
+        if (what.equals("parking_lot")) {
+
+            sql = "select COUNT(*) total "
+                    + "from parking_lot "
+                    + "where company_id = " + parameters[0] + " "
+                    + "and IFNULL(PARKING_LOT_NO,'') like '%" + parameters[1] + "%' "
+                    + "and IFNULL(description,'') like '%" + parameters[2] + "%'  ";
+        } else if (what.equals("customer")) {
+            sql = "select COUNT(*) total from driver d "
+                    + "join vehicle v on d.id = v.driver_id "
+                    + "where CONCAT(first_name,' ',middle_name,' ',last_name) like '%" + parameters[0] + "%' "
+                    + "and IFNULL(mobile,'') like '%" + parameters[1] + "%' "
+                    + "and IFNULL(email,'') like '%" + parameters[2] + "%' "
+                    + "and IFNULL(code,'') like '%" + parameters[3] + "%' "
+                    + "and IFNULL(license_plate,'') like '%" + parameters[4] + "%' "
+                    + "and IFNULL(manufacturer,'') like '%" + parameters[5] + "%' "
+                    + "and IFNULL(model,'') like '%" + parameters[6] + "%' "
+                    + "and IFNULL(year,'') like '%" + parameters[7] + "%' ";
+        } else if (what.equals("parked")) {
+            sql = "select COUNT(*) total  from parked_car pc "
+                    + "join vehicle v on pc.vehicle_id = v.id "
+                    + "join driver d on v.driver_id = d.id "
+                    + "where pc.company_id = " + parameters[0] + " "
+                    + "and CONCAT(first_name,' ',middle_name,' ',last_name) like '%" + parameters[1] + "%' "
+                    + "and IFNULL(code,'') like '%" + parameters[2] + "%' "
+                    + "and IFNULL(license_plate,'') like '%" + parameters[3] + "%' "
+                    + "and IFNULL(year,'') like '%" + parameters[4] + "%' "
+                    + "and date_exit is null";
+        } else if (what.equals("exited")) {
+            sql = "select COUNT(*) total  from parked_car pc "
+                    + "join vehicle v on pc.vehicle_id = v.id "
+                    + "join driver d on v.driver_id = d.id "
+                    + "where pc.company_id = " + parameters[0] + " "
+                    + "and CONCAT(first_name,' ',middle_name,' ',last_name) like '%" + parameters[1] + "%' "
+                    + "and IFNULL(code,'') like '%" + parameters[2] + "%' "
+                    + "and IFNULL(license_plate,'') like '%" + parameters[3] + "%' "
+                    + "and date_exit is not null";
+        } else if (what.equals("user")) {
+            sql = "select count(*) total from user u "
+                    + " join company c on u.company_id = c.id "
+                    + " where u.user_id like '%" + parameters[1] + "%' "
+                    + " and u.full_name like '%" + parameters[2] + "%' "
+                    + " and c.company_name like '%" + parameters[3] + "%' "
+                    + " and u.user_id <> '" + parameters[0] + "' "
+                    + " order by full_name ";
+        } else {
+            sql = "nothing";
+        }
+
+        System.out.println(sql);
+        try {
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
+            rs = ps.executeQuery();
+
+            if (rs.next()) {
+                count = rs.getInt(1);
+            }
+
+            rs.close();
+            ps.close();
+
+            return count;
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return 0;
+    }
+
+    public ArrayList<Object> getRows(String what, String[] parameters, int page, int limit) {
+        ArrayList<Object> arrayList = new ArrayList<Object>();
+        String sql;
+        ResultSet rs;
+        int count = 0;
+        String idWhereClause = "";
+        /* A flag to extract only one record */
+        String idWhereClauseParked = "";
+        String idWhereClauseExited = "";
+        String idWhereClauseUser = "";
+
+        if (what.equals("parking_lot")) {
+
+            sql = "select * from /****/ (select ROW_NUMBER() OVER (order by PARKING_LOT_NO) AS row_num, id, company_id, PARKING_LOT_NO, description "
+                    + "from parking_lot "
+                    + "where company_id = " + parameters[0] + " "
+                    + "and IFNULL(PARKING_LOT_NO,'') like '%" + parameters[1] + "%' "
+                    + "and IFNULL(description,'') like '%" + parameters[2] + "%'  "
+                    + "order by PARKING_LOT_NO) x "
+                    + "limit " + (page - 1) * limit + ", " + limit;
+        } else if (what.equals("customer")) {
+            idWhereClause = page < 0 ? "and driver_id = " + parameters[8] + " " : "";/*to Get Only One record*/
+            page = page < 0 ? 1 : page;
+            sql = "select * from (select ROW_NUMBER() OVER (order by CONCAT(first_name,' ',middle_name,' ',last_name) desc) AS row_num, CONCAT(first_name,' ',middle_name,' ',last_name) fullName, "
+                    + "first_name, middle_name, last_name, gender, address, mobile, date_of_birth, job_title, tin, email, code, license_plate, manufacturer, model, year, driver_id from driver d "
+                    + "join vehicle v on d.id = v.driver_id "
+                    + "where CONCAT(first_name,' ',middle_name,' ',last_name) like '%" + parameters[0] + "%' "
+                    + "and IFNULL(mobile,'') like '%" + parameters[1] + "%' "
+                    + "and IFNULL(email,'') like '%" + parameters[2] + "%' "
+                    + "and IFNULL(code,'') like '%" + parameters[3] + "%' "
+                    + "and IFNULL(license_plate,'') like '%" + parameters[4] + "%' "
+                    + "and IFNULL(manufacturer,'') like '%" + parameters[5] + "%' "
+                    + "and IFNULL(model,'') like '%" + parameters[6] + "%' "
+                    + "and IFNULL(year,'') like '%" + parameters[7] + "%' "
+                    + idWhereClause
+                    + "order by CONCAT(first_name,' ',middle_name,' ',last_name) desc) x "
+                    + "limit " + (page - 1) * limit + ", " + limit;
+        } else if (what.equals("parked")) {
+            idWhereClauseParked = page < 0 ? "and pc.id = " + parameters[5] + " " : "";/*to Get Only One record*/
+            page = page < 0 ? 1 : page;
+            sql = "select * from (select ROW_NUMBER() OVER (order by CONCAT(first_name,' ',middle_name,' ',last_name) ) AS row_num, CONCAT(first_name,' ',middle_name,' ',last_name) fullName, "
+                    + "first_name, middle_name, last_name, gender, address, mobile, date_of_birth, job_title, tin, email, code, license_plate, manufacturer, model, year, driver_id, pc.id, vehicle_id, "
+                    + "parking_lot_no, description, date_entry, date_exit, pl.company_id, "
+                    + "CASE when TIMESTAMPDIFF(hour, date_entry,date_exit) > 0 then "
+                    + "concat(floor(TIMESTAMPDIFF(minute, date_entry,date_exit)/60),'hr ', mod(TIMESTAMPDIFF(minute, date_entry,date_exit),60),'min') "
+                    + "else concat(mod(TIMESTAMPDIFF(minute, date_entry,date_exit),60),'min') end AS duration "
+                    + "from parked_car pc "
+                    + "join vehicle v on pc.vehicle_id = v.id "
+                    + "join driver d on v.driver_id = d.id "
+                    + "join parking_lot pl on pc.parking_lot_id = pl.id "
+                    + "where pc.company_id = " + parameters[0] + " "
+                    + "and CONCAT(first_name,' ',middle_name,' ',last_name) like '%" + parameters[1] + "%' "
+                    + "and IFNULL(code,'') like '%" + parameters[2] + "%' "
+                    + "and IFNULL(license_plate,'') like '%" + parameters[3] + "%' "
+                    + "and IFNULL(year,'') like '%" + parameters[4] + "%' "
+                    + idWhereClauseParked
+                    + "and date_exit is null ) x "
+                    + "order by fullName";
+        } else if (what.equals("exited")) {
+            idWhereClauseExited = page < 0 ? "and pc.id = " + parameters[5] + " " : "";/*to Get Only One record*/
+            page = page < 0 ? 1 : page;
+            sql = "select * from (select ROW_NUMBER() OVER (order by CONCAT(first_name,' ',middle_name,' ',last_name) ) AS row_num, CONCAT(first_name,' ',middle_name,' ',last_name) fullName, "
+                    + "first_name, middle_name, last_name, gender, address, mobile, date_of_birth, job_title, tin, email, code, license_plate, manufacturer, model, year, driver_id, pc.id, vehicle_id, "
+                    + "parking_lot_no, description, date_entry, date_exit, pl.company_id, "
+                    + "CASE when TIMESTAMPDIFF(hour, date_entry,date_exit) > 0 then "
+                    + "concat(floor(TIMESTAMPDIFF(minute, date_entry,date_exit)/60),'hr ', mod(TIMESTAMPDIFF(minute, date_entry,date_exit),60),'min') "
+                    + "else concat(mod(TIMESTAMPDIFF(minute, date_entry,date_exit),60),'min') end AS duration "
+                    + "from parked_car pc "
+                    + "join vehicle v on pc.vehicle_id = v.id "
+                    + "join driver d on v.driver_id = d.id "
+                    + "join parking_lot pl on pc.parking_lot_id = pl.id "
+                    + "where pc.company_id = " + parameters[0] + " "
+                    + "and CONCAT(first_name,' ',middle_name,' ',last_name) like '%" + parameters[1] + "%' "
+                    + "and IFNULL(code,'') like '%" + parameters[2] + "%' "
+                    + "and IFNULL(license_plate,'') like '%" + parameters[3] + "%' "
+                    + idWhereClauseExited
+                    + "and date_exit is not null ) x "
+                    + "order by date_exit ";
+        } else if (what.equals("user")) {
+            idWhereClauseUser = page < 0 ? "and pc.id = " + parameters[5] + " " : "";/*to Get Only One record*/
+            page = page < 0 ? 1 : page;
+            sql = "select ROW_NUMBER() OVER (order by full_name ) AS row_num, u.user_id, u.full_name, c.company_name from user u "
+                    + " join company c on u.company_id = c.id "
+                    + " where u.user_id like '%" + parameters[1] + "%' "
+                    + " and u.full_name like '%" + parameters[2] + "%' "
+                    + " and c.company_name like '%" + parameters[3] + "%' "
+                    + " and u.user_id <> '" + parameters[0] + "' "
+                    + idWhereClauseUser
+                    + " order by full_name ";
+        } else {
+            sql = "nothing";
+        }
+
+        System.out.println(sql);
+        try {
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
+            rs = ps.executeQuery();
+
+            if (what.equals("parking_lot")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getInt("row_num"), rs.getString("parking_lot_no"), rs.getString("description")});
+                }
+                /* Customer's information Section */
+            } else if (what.equals("customer") && idWhereClause.equals("")) {
+                /*Specific rows for search*/
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getInt("row_num"), rs.getString("fullName"), rs.getString("mobile"), rs.getString("email"), rs.getString("tin"), rs.getString("code"),
+                        rs.getString("license_plate"), rs.getString("manufacturer"), rs.getString("model"), rs.getString("year"), rs.getString("driver_id")});
+                }
+            } else if (what.equals("customer") && !idWhereClause.equals("")) {
+                /*Retrive all records */
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getString("first_name"), rs.getString("middle_name"), rs.getString("last_name"), rs.getString("gender"), rs.getString("address"), rs.getString("mobile"),
+                        rs.getString("date_of_birth"), rs.getString("job_title"), rs.getString("tin"), rs.getString("email"), rs.getString("code"), rs.getString("license_plate"), rs.getString("manufacturer"),
+                        rs.getString("model"), rs.getString("year"), rs.getString("driver_id")});
+                }
+                /* Currently parked Car's information Section */
+            } else if (what.equals("parked") && idWhereClauseParked.equals("")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getInt("row_num"), rs.getString("code"), rs.getString("license_plate"), rs.getString("model"), rs.getString("year"),
+                        rs.getString("fullname"), rs.getString("parking_lot_no"), rs.getString("id")});
+                }
+            } else if (what.equals("parked") && !idWhereClauseParked.equals("")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getString("fullname"), rs.getString("address"), rs.getString("mobile"),
+                        rs.getString("code"), rs.getString("license_plate"), rs.getString("manufacturer"), rs.getString("model"), rs.getString("year"),
+                        rs.getString("parking_lot_no"), rs.getString("description"), rs.getString("date_entry")});
+                }
+                /* Exited Car's information Section */
+            } else if (what.equals("exited") && idWhereClauseExited.equals("")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getInt("row_num"), rs.getString("code"), rs.getString("license_plate"), rs.getString("parking_lot_no"), rs.getString("fullname"),
+                        rs.getString("date_entry"), rs.getString("date_exit"), rs.getString("duration"), rs.getString("id")});
+                }
+            } else if (what.equals("exited") && !idWhereClauseExited.equals("")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getString("fullname"), rs.getString("address"), rs.getString("mobile"),
+                        rs.getString("code"), rs.getString("license_plate"), rs.getString("manufacturer"), rs.getString("model"), rs.getString("year"),
+                        rs.getString("parking_lot_no"), rs.getString("description"), rs.getString("date_entry"), rs.getString("date_exit"), rs.getString("duration")});
+                }
+
+            } else {
+
+            }
+
+            rs.close();
+            ps.close();
+            System.out.println(arrayList);
+            return arrayList;
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return null;
+    }
+
+    public ArrayList<Object> fetchACar(String what, String[] parameters) {
+        ArrayList<Object> arrayList = new ArrayList<Object>();
+        String sql;
+        ResultSet rs;
+
+        if (what.equals("in")) {
+            sql = "select CONCAT(first_name,' ',middle_name,' ',last_name) fullName, gender, address, mobile, date_of_birth, job_title, tin, email, code, license_plate, manufacturer, model, year, driver_id, v.id vehicle_id from driver d "
+                    + "join vehicle v on d.id = v.driver_id "
+                    + "Where code = '" + parameters[0] + "' "
+                    + "and license_plate = '" + parameters[1] + "' ";
+        } else if (what.equals("out")) {
+            sql = "select  CONCAT(first_name,' ',middle_name,' ',last_name) fullName, mobile, code, license_plate, manufacturer, model, year, pc.id, parking_lot_no, description, date_entry "
+                    + "from parked_car pc join vehicle v on pc.vehicle_id = v.id "
+                    + "join driver d on v.driver_id = d.id "
+                    + "join parking_lot pl on pc.parking_lot_id = pl.id "
+                    + "Where pl.company_id = " + parameters[0] + " "
+                    + "and code = '" + parameters[1] + "' "
+                    + "and license_plate = '" + parameters[2] + "' ";
+        } else if (what.equals("out_exit")) {
+            sql = "select  CONCAT(first_name,' ',middle_name,' ',last_name) fullName, code, license_plate, d.tin customer_tin, date_entry, company_name, c.tin_number company_tin, "
+                    + "Address_1, Address_2, fee_per_hr, phone_no from parked_car pc "
+                    + "join vehicle v on pc.vehicle_id = v.id "
+                    + "join driver d on v.driver_id = d.id "
+                    + "join parking_lot pl on pc.parking_lot_id = pl.id "
+                    + "join company c on pc.company_id = c.id "
+                    + "Where pl.company_id = " + parameters[0] + " and date_exit is null "
+                    + "and pc.id = " + parameters[1] + " ";
+        } else {
+            sql = "nothing";
+        }
+
+        System.out.println(sql);
+        try {
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
+            rs = ps.executeQuery();
+
+            if (what.equals("in")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getString("fullName"), rs.getString("mobile"), rs.getString("code"), rs.getString("license_plate"), rs.getString("manufacturer"), rs.getString("model"), rs.getString("year"), rs.getInt("vehicle_id")});
+                }
+            } else if (what.equals("out")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getString("fullName"), rs.getString("mobile"), rs.getString("code"), rs.getString("license_plate"), rs.getString("manufacturer"),
+                        rs.getString("model"), rs.getString("year"), rs.getString("parking_lot_no"), rs.getString("description"), rs.getString("year"), rs.getString("date_entry"),
+                        rs.getInt("id")});
+                }
+            } else if (what.equals("out_exit")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getString("fullName"), rs.getString("code"), rs.getString("license_plate"), rs.getString("customer_tin"),
+                        rs.getString("date_entry"), rs.getString("company_name"), rs.getString("company_tin"), rs.getString("Address_1"), rs.getString("Address_2"),
+                        rs.getString("fee_per_hr"), rs.getString("phone_no")});
+                }
+            } else {
+
+            }
+
+            rs.close();
+            ps.close();
+            System.out.println(arrayList);
+            return arrayList;
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return null;
+    }
+
+    public int updateARecord(String what, String[] parameters) {
+        String parkingSql;
+        String customerSql;
+        String exitParkingSql;
+        int result;
+
+        if (what.equals("parking_lot")) {
+
+            parkingSql = "UPDATE PARKING_LOT "
+                    + "SET PARKING_LOT_NO = '" + parameters[2] + "', "
+                    + "description    = '" + parameters[3] + "' "
+                    + "WHERE company_id = " + parameters[0] + " "
+                    + "AND PARKING_LOT_NO = '" + parameters[1] + "'";
+            customerSql = "";
+            exitParkingSql = "";
+        } else if (what.equals("customer")) {
+
+            parkingSql = "update DRIVER set first_name = '" + parameters[1] + "', middle_name = '" + parameters[2] + "', last_name = '" + parameters[3] + "', gender = '" + parameters[4] + "', "
+                    + "address = '" + parameters[5] + "', mobile= '" + parameters[6] + "', date_of_birth= '" + parameters[7] + "', job_title= '" + parameters[8] + "', tin= '" + parameters[9] + "', email= '" + parameters[10] + "' "
+                    + "where id = " + parameters[0];
+
+            customerSql = "update VEHICLE set code = '" + parameters[11] + "', license_plate = '" + parameters[12] + "', manufacturer = '" + parameters[13] + "', model = '" + parameters[14] + "', year = '" + parameters[15] + "' "
+                    + "where driver_id = " + parameters[0];
+            exitParkingSql = "";
+        } else if (what.equals("exit_parking_lot")) {
+
+            exitParkingSql = "update parked_car set date_exit = now() "
+                    + "Where company_id = " + parameters[0] + " and date_exit is null "
+                    + "and id = " + parameters[1] + " ";
+
+            parkingSql = "";
+            customerSql = "";
+        } else {
+            parkingSql = "nothing";
+            customerSql = "nothing";
+            exitParkingSql = "nothing";
+        }
+
+        System.out.println(parkingSql);
+        System.out.println(customerSql);
+        System.out.println(exitParkingSql);
+        try {
+
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps1;
+            PreparedStatement ps2;
+            PreparedStatement ps3;
+
+            if (what.equals("parking_lot")) {
+                ps1 = DatabaseConnection.getInstance().getConnection().prepareStatement(parkingSql);
+                result = ps1.executeUpdate();
+
+                ps1.close();
+            } else if (what.equals("customer")) {
+                ps1 = DatabaseConnection.getInstance().getConnection().prepareStatement(customerSql);
+                result = ps1.executeUpdate();
+
+                ps2 = DatabaseConnection.getInstance().getConnection().prepareStatement(parkingSql);
+                result = ps1.executeUpdate();
+
+                ps1.close();
+                ps2.close();
+            } else if (what.equals("exit_parking_lot")) {
+                ps3 = DatabaseConnection.getInstance().getConnection().prepareStatement(exitParkingSql);
+                result = ps3.executeUpdate();
+
+                ps3.close();
+            } else {
+                result = 0;
+            }
+
+            System.out.println(result);
+            return result;
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return 0;
+    }
+
+    public int deleteARecord(String what, String[] parameters) {
+        String parkingSql;
+        String customerSql;
+        int result;
+
+        if (what.equals("parking_lot")) {
+
+            parkingSql = "DELETE FROM PARKING_LOT "
+                    + "WHERE company_id = " + parameters[0] + " "
+                    + "AND PARKING_LOT_NO = '" + parameters[1] + "'";
+            customerSql = "";
+
+        } else if (what.equals("customer")) {
+
+            parkingSql = "DELETE FROM DRIVER "
+                    + "WHERE id = " + parameters[0] + " ";
+
+            customerSql = "DELETE FROM VEHICLE "
+                    + "WHERE driver_id = " + parameters[0] + " ";
+        } else {
+            parkingSql = "nothing";
+            customerSql = "nothing";
+        }
+
+        System.out.println(parkingSql);
+        try {
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps1 = DatabaseConnection.getInstance().getConnection().prepareStatement(parkingSql);
+            result = ps1.executeUpdate();
+            ps1.close();
+
+            if (what.equals("customer")) {
+                PreparedStatement ps2 = DatabaseConnection.getInstance().getConnection().prepareStatement(customerSql);
+                result = ps2.executeUpdate();
+                ps2.close();
+            }
+
+            System.out.println(result);
+            return result;
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return 0;
+    }
+
+    public ArrayList<Object> login(String username, String password) {
+        ArrayList<Object> arrayList = new ArrayList<Object>();
+        String sql = "select u.*, ud.id user_detail_id, case when password = md5('" + password + "') then 'correct' else 'tempPassword' end correct "
+                + "from user u join user_detail ud on u.id = ud.user_id "
+                + "where u.user_id = '" + username + "' and password=md5('" + password + "') "
+                + "or (ud.temp_pass_flag = true and ud.temp_password = md5('" + password + "'))";
+        ResultSet rs;
+        try {
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
+            rs = ps.executeQuery();
+
+            if (rs.next()) {
+                arrayList.add(new Object[]{rs.getString("id"), rs.getString("company_id"), rs.getString("user_id"), rs.getString("role"),
+                    rs.getString("status"), rs.getString("correct")});
+
+                /* Disable temp password (generated with forget pass) b/c user logged in with their original password */
+                if (rs.getString("status").equals("1") && rs.getString("correct").equals("correct")) {
+                    sql = "update user_detail set temp_pass_flag = false where id = " + rs.getString("user_detail_id");
+                    DatabaseConnection.getInstance().getConnection().prepareStatement(sql).executeUpdate();
+                    System.out.println(sql);
+                }
+            } else {
+                /* No record found */
+            }
+
+            rs.close();
+            ps.close();
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+        System.out.println(arrayList);
+        return arrayList;
+
+    }
+
+    public String forgetPassword(String username) {
+        String sql = "select id from user where user_id = '" + username + "' ";
+        String id = "";
+        ResultSet rs;
+        ResultSet rs2;
+        try {
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
+            rs = ps.executeQuery();
+            System.out.println(sql);
+            if (rs.next()) {
+                id = rs.getString("id");
+                sql = "update user_detail set temp_password = md5('" + generatePassword() + "'), temp_pass_flag = true where user_id = " + id + " ";
+                PreparedStatement ps2 = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
+                System.out.println(sql);
+                rs.close();
+                if (ps2.executeUpdate() > 0) {
+                    ps2.close();
+                    return "success";
+                } else {
+                    return "error";
+                }
+            } else {
+                return "no user";
+            }
+
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return "";
+    }
+
+    public int mandatoryPasswordChange(String newPassword, String id) {
+        String sql = "update user set password = md5('" + newPassword + "') where id =" + id + " ";
+        try {
+            DatabaseConnection.getInstance().connectToDatabase();
+            if (DatabaseConnection.getInstance().getConnection().prepareStatement(sql).executeUpdate() > 0) {
+                sql = "update user_detail set temp_pass_flag = false where user_id = " + id;
+                System.out.println(sql);
+                return DatabaseConnection.getInstance().getConnection().prepareStatement(sql).executeUpdate();
+            }
+            return 0;
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        return 0;
+    }
+
+    private String generatePassword() {
+        String characterSet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890@#";
+        StringBuilder pass = new StringBuilder();
+        Random rand = new Random();
+        while (pass.length() <= 8) { // length of the random password
+            int index = (int) (rand.nextFloat() * characterSet.length());
+            pass.append(characterSet.charAt(index));
+        }
+        return pass.toString();
+    }
+}
