@@ -149,6 +149,46 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
         return 0;
     }
 
+    public int registerUser(String username, String fullname, String password, String mobile, String role, String status, String company) {
+        int result;
+        status = status.equals("Enabled") ? "true" : "false";
+        String sql = "insert into user (company_id, user_id, full_name, password, mobile, role, status) VALUES "
+                + "((select id from company where company_name= '" + company + "'), '" + username + "', '" + fullname + "', 'NEW', '"
+                + mobile + "', '" + role + "', " + status + ")";
+        System.out.println(sql);
+        try {
+            DatabaseConnection.getInstance().connectToDatabase();
+            PreparedStatement ps = DatabaseConnection.getInstance().getConnection().prepareStatement(sql, Statement.RETURN_GENERATED_KEYS);
+            result = ps.executeUpdate();
+
+            if (result == 1) {
+                ResultSet generatedKeys = ps.getGeneratedKeys();
+
+                if (generatedKeys.next()) {
+                    String tempSql = "insert into user_detail (user_id, temp_password, temp_pass_flag, wrong_pass_count) values"
+                            + "(" + generatedKeys.getInt(1) + ", md5('" + password + "'),true, 0) ";
+                    PreparedStatement ps2 = DatabaseConnection.getInstance().getConnection().prepareStatement(tempSql);
+                    int result2 = ps2.executeUpdate();
+                    ps2.close();
+                    if (result2 == 0) {/*If Temp pass cannot be created Delete the user record*/
+                        String deleteUserSql = "DELETE FROM USER WHERE ID = " + generatedKeys.getInt(1);
+                        PreparedStatement ps3 = DatabaseConnection.getInstance().getConnection().prepareStatement(deleteUserSql);
+                        result2 = ps3.executeUpdate();
+                        ps3.close();
+                        return 0;
+                        /* Return no success*/
+                    }
+                    return result2;
+                }
+            }
+
+        } catch (SQLException ex) {
+            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+        }
+
+        return 0;
+    }
+
     public int getTotalCount(String what, String[] parameters) {
         String sql;
         ResultSet rs;
@@ -199,6 +239,11 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                     + " and c.company_name like '%" + parameters[3] + "%' "
                     + " and u.user_id <> '" + parameters[0] + "' "
                     + " order by full_name ";
+        } else if (what.equals("company")) {
+            sql = "select count(*) total from company "
+                    + "where IFNULL(company_name, '') like '%" + parameters[0] + "%' "
+                    + "and IFNULL(tin_number, '') like '%" + parameters[1] + "%' "
+                    + "and IFNULL(phone_no, '') like '%" + parameters[2] + "%' ";
         } else {
             sql = "nothing";
         }
@@ -228,11 +273,13 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
         String sql;
         ResultSet rs;
         int count = 0;
-        String idWhereClause = "";
+        
         /* A flag to extract only one record */
+        String idWhereClause = "";
         String idWhereClauseParked = "";
         String idWhereClauseExited = "";
         String idWhereClauseUser = "";
+        String idWhereClauseCompany = "";
 
         if (what.equals("parking_lot")) {
 
@@ -302,9 +349,9 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                     + "and date_exit is not null ) x "
                     + "order by date_exit ";
         } else if (what.equals("user")) {
-            idWhereClauseUser = page < 0 ? "and pc.id = " + parameters[5] + " " : "";/*to Get Only One record*/
+            idWhereClauseUser = page < 0 ? "and u.id = " + parameters[4] + " " : "";/*to Get Only One record*/
             page = page < 0 ? 1 : page;
-            sql = "select ROW_NUMBER() OVER (order by full_name ) AS row_num, u.user_id, u.full_name, c.company_name from user u "
+            sql = "select ROW_NUMBER() OVER (order by full_name ) AS row_num, u.user_id username, u.full_name, c.company_name, u.role, u.status, mobile, u.id uid, c.id cid from user u "
                     + " join company c on u.company_id = c.id "
                     + " where u.user_id like '%" + parameters[1] + "%' "
                     + " and u.full_name like '%" + parameters[2] + "%' "
@@ -312,11 +359,23 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                     + " and u.user_id <> '" + parameters[0] + "' "
                     + idWhereClauseUser
                     + " order by full_name ";
+        } else if (what.equals("company")) {
+            idWhereClauseCompany = page < 0 ? "and id = " + parameters[3] + " " : "";/*to Get Only One record*/
+            page = page < 0 ? 1 : page;
+            sql = "select ROW_NUMBER() OVER (order by company_name ) AS row_num, company_name, tin_number, address_1, address_2, fee_per_hr, phone_no, id from company "
+                    + "where IFNULL(company_name, '') like '%" + parameters[0] + "%' "
+                    + "and IFNULL(tin_number, '') like '%" + parameters[1] + "%' "
+                    + "and IFNULL(phone_no, '') like '%" + parameters[2] + "%' "
+                    +  idWhereClauseCompany
+                    + "order by company_name";
+        } else if (what.equals("company_all")) {
+            sql = "SELECT DISTINCT company_name FROM company ORDER BY company_name";
         } else {
             sql = "nothing";
         }
 
         System.out.println(sql);
+
         try {
             DatabaseConnection.getInstance().connectToDatabase();
             PreparedStatement ps = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
@@ -364,7 +423,32 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                         rs.getString("code"), rs.getString("license_plate"), rs.getString("manufacturer"), rs.getString("model"), rs.getString("year"),
                         rs.getString("parking_lot_no"), rs.getString("description"), rs.getString("date_entry"), rs.getString("date_exit"), rs.getString("duration")});
                 }
-
+                /* Users Administration */
+            } else if (what.equals("user") && idWhereClauseUser.equals("")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getInt("row_num"), rs.getString("username"), rs.getString("full_name"), rs.getString("company_name"), rs.getString("uid")});
+                }
+            } else if (what.equals("user") && !idWhereClauseUser.equals("")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getString("username"), rs.getString("full_name"), rs.getString("company_name"),
+                        rs.getString("role"), rs.getString("status"), rs.getString("mobile"), rs.getString("uid"), rs.getString("cid")});
+                }
+                /* Company Administration */
+            }else if (what.equals("company") && idWhereClauseCompany.equals("")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getInt("row_num"), rs.getString("company_name"), rs.getString("tin_number"), rs.getString("address_1"),
+                    rs.getString("fee_per_hr"), rs.getString("phone_no"), rs.getString("id")});
+                }
+            } else if (what.equals("company") && !idWhereClauseCompany.equals("")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getString("company_name"), rs.getString("tin_number"), rs.getString("address_1"),rs.getString("address_2"),
+                    rs.getString("fee_per_hr"), rs.getString("phone_no")});
+                }
+                /* List of all companies for the ComboBox Selection */
+            } else if (what.equals("company_all")) {
+                while (rs.next()) {
+                    arrayList.add(new Object[]{rs.getString("company_name")});
+                }
             } else {
 
             }
@@ -376,6 +460,7 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
         } catch (SQLException ex) {
             Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
         }
+
         return null;
     }
 
@@ -440,8 +525,10 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
             ps.close();
             System.out.println(arrayList);
             return arrayList;
+
         } catch (SQLException ex) {
-            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(Server.class
+                    .getName()).log(Level.SEVERE, null, ex);
         }
         return null;
     }
@@ -450,6 +537,7 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
         String parkingSql;
         String customerSql;
         String exitParkingSql;
+        String userSql;
         int result;
 
         if (what.equals("parking_lot")) {
@@ -461,6 +549,7 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                     + "AND PARKING_LOT_NO = '" + parameters[1] + "'";
             customerSql = "";
             exitParkingSql = "";
+            userSql = "";
         } else if (what.equals("customer")) {
 
             parkingSql = "update DRIVER set first_name = '" + parameters[1] + "', middle_name = '" + parameters[2] + "', last_name = '" + parameters[3] + "', gender = '" + parameters[4] + "', "
@@ -470,6 +559,7 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
             customerSql = "update VEHICLE set code = '" + parameters[11] + "', license_plate = '" + parameters[12] + "', manufacturer = '" + parameters[13] + "', model = '" + parameters[14] + "', year = '" + parameters[15] + "' "
                     + "where driver_id = " + parameters[0];
             exitParkingSql = "";
+            userSql = "";
         } else if (what.equals("exit_parking_lot")) {
 
             exitParkingSql = "update parked_car set date_exit = now() "
@@ -478,15 +568,25 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
 
             parkingSql = "";
             customerSql = "";
+            userSql = "";
+        } else if (what.equals("user")) {
+            String passQuery = parameters[1].equals("0") ? "" : "password = md5('" + parameters[1] + "'), ";
+            String status = parameters[3].equals("Enabled") ? "true" : "false";
+            userSql = "update user set full_name = '" + parameters[0] + "', " + passQuery + " mobile = '" + parameters[2] + "', role = '" + parameters[3] + "', "
+                    + "status = " + status + ", company_id = (select id from company where company_name= '" + parameters[5] + "') "
+                    + "where id = " + parameters[6];
+
+            parkingSql = "";
+            customerSql = "";
+            exitParkingSql = "";
         } else {
             parkingSql = "nothing";
             customerSql = "nothing";
             exitParkingSql = "nothing";
+            userSql = "nothing";
         }
 
-        System.out.println(parkingSql);
-        System.out.println(customerSql);
-        System.out.println(exitParkingSql);
+        System.out.println(userSql);
         try {
 
             DatabaseConnection.getInstance().connectToDatabase();
@@ -513,14 +613,21 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                 result = ps3.executeUpdate();
 
                 ps3.close();
+            } else if (what.equals("user")) {
+                ps1 = DatabaseConnection.getInstance().getConnection().prepareStatement(userSql);
+                result = ps1.executeUpdate();
+
+                ps1.close();
             } else {
                 result = 0;
             }
 
             System.out.println(result);
             return result;
+
         } catch (SQLException ex) {
-            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(Server.class
+                    .getName()).log(Level.SEVERE, null, ex);
         }
         return 0;
     }
@@ -528,44 +635,63 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
     public int deleteARecord(String what, String[] parameters) {
         String parkingSql;
         String customerSql;
-        int result;
+        String userSql;
+        int result = 0;
+        PreparedStatement ps;
 
         if (what.equals("parking_lot")) {
 
             parkingSql = "DELETE FROM PARKING_LOT "
                     + "WHERE company_id = " + parameters[0] + " "
                     + "AND PARKING_LOT_NO = '" + parameters[1] + "'";
+
             customerSql = "";
+            userSql = "";
 
         } else if (what.equals("customer")) {
 
-            parkingSql = "DELETE FROM DRIVER "
-                    + "WHERE id = " + parameters[0] + " ";
-
             customerSql = "DELETE FROM VEHICLE "
                     + "WHERE driver_id = " + parameters[0] + " ";
+
+            parkingSql = "";
+            userSql = "";
+        } else if (what.equals("user")) {
+
+            userSql = "DELETE FROM USER "
+                    + "WHERE ID = " + parameters[0] + " ";
+
+            customerSql = "";
+            parkingSql = "";
+
         } else {
             parkingSql = "nothing";
             customerSql = "nothing";
+            userSql = "";
         }
 
-        System.out.println(parkingSql);
+        System.out.println(userSql);
         try {
             DatabaseConnection.getInstance().connectToDatabase();
-            PreparedStatement ps1 = DatabaseConnection.getInstance().getConnection().prepareStatement(parkingSql);
-            result = ps1.executeUpdate();
-            ps1.close();
-
-            if (what.equals("customer")) {
-                PreparedStatement ps2 = DatabaseConnection.getInstance().getConnection().prepareStatement(customerSql);
-                result = ps2.executeUpdate();
-                ps2.close();
+            if (what.equals("parking_lot")) {
+                ps = DatabaseConnection.getInstance().getConnection().prepareStatement(parkingSql);
+                result = ps.executeUpdate();
+                ps.close();
+            } else if (what.equals("customer")) {
+                ps = DatabaseConnection.getInstance().getConnection().prepareStatement(customerSql);
+                result = ps.executeUpdate();
+                ps.close();
+            } else if (what.equals("user")) {
+                ps = DatabaseConnection.getInstance().getConnection().prepareStatement(userSql);
+                result = ps.executeUpdate();
+                ps.close();
             }
 
             System.out.println(result);
             return result;
+
         } catch (SQLException ex) {
-            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(Server.class
+                    .getName()).log(Level.SEVERE, null, ex);
         }
         return 0;
     }
@@ -598,8 +724,10 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
 
             rs.close();
             ps.close();
+
         } catch (SQLException ex) {
-            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(Server.class
+                    .getName()).log(Level.SEVERE, null, ex);
         }
 
         System.out.println(arrayList);
@@ -631,10 +759,12 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                 }
             } else {
                 return "no user";
+
             }
 
         } catch (SQLException ex) {
-            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(Server.class
+                    .getName()).log(Level.SEVERE, null, ex);
         }
         return "";
     }
@@ -649,8 +779,10 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                 return DatabaseConnection.getInstance().getConnection().prepareStatement(sql).executeUpdate();
             }
             return 0;
+
         } catch (SQLException ex) {
-            Logger.getLogger(Server.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(Server.class
+                    .getName()).log(Level.SEVERE, null, ex);
         }
         return 0;
     }
