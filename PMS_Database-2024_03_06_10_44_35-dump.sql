@@ -31,7 +31,7 @@ CREATE TABLE `company` (
   `fee_per_hr` double DEFAULT NULL,
   `phone_no` varchar(200) DEFAULT NULL,
   PRIMARY KEY (`id`)
-) ENGINE=InnoDB AUTO_INCREMENT=6 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB AUTO_INCREMENT=8 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
 --
@@ -40,7 +40,7 @@ CREATE TABLE `company` (
 
 LOCK TABLES `company` WRITE;
 /*!40000 ALTER TABLE `company` DISABLE KEYS */;
-INSERT INTO `company` (`id`, `company_name`, `tin_number`, `Address_1`, `Address_2`, `fee_per_hr`, `phone_no`) VALUES (1,'SINDU GEBERU PARKING FACILITY PLC','0005657455','A.A. S/C KIRKOS W.08 H.NO 485/C','KASSANCHIS MENEHARIA AREAD',10.5,'09123456789/09987456321'),(2,'ADDIS ABABA UNIVERSITY MAIN CAMPUS','000222335','ADDIS ABABA 4 KILO','INFRONT OF MBR FACILITY',5,'01152665656'),(3,'BAHIR DAR AIR PORT','00111256555','BAHIR DAR MAIN AIR PORT','NEAR PEDA CAMPUS',10,'09784545485/00966356565'),(4,'HILTON HOTEL','00144545454','ADDIS ABABA ETHIOPIAN PARK','KIKOS SUB CITY',40,'01111111445/09878744442'),(5,'SHERATON HOTEL','0011188789','ADDIS ABABA INFRONT OF UNITY PARK','NIFAS SILK LAFTO',50,'09784513333/07656598998');
+INSERT INTO `company` (`id`, `company_name`, `tin_number`, `Address_1`, `Address_2`, `fee_per_hr`, `phone_no`) VALUES (1,'SINDU GEBERU PARKING FACILITY PLC','0005657455','A.A. S/C KIRKOS W.08 H.NO 485/C','KASSANCHIS MENEHARIA AREAD',10.5,'09123456789/09987456321'),(2,'ADDIS ABABA UNIVERSITY MAIN CAMPUS','0002223356','ADDIS ABABA 4 KILO','INFRONT OF MBR FACILITY',10,'0912456789'),(3,'BAHIR DAR AIR PORT','00111256555','BAHIR DAR MAIN AIR PORT','NEAR PEDA CAMPUS',10,'09784545485/00966356565'),(4,'HILTON HOTEL','00144545454','ADDIS ABABA ETHIOPIAN PARK','KIKOS SUB CITY',40,'01111111445/09878744442'),(5,'SHERATON HOTEL','0011188789','ADDIS ABABA INFRONT OF UNITY PARK','NIFAS SILK LAFTO',50,'09784513333/07656598998'),(7,'ADMINISTRATION','-','-','-',1,'-');
 /*!40000 ALTER TABLE `company` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -157,7 +157,7 @@ CREATE TABLE `user` (
 
 LOCK TABLES `user` WRITE;
 /*!40000 ALTER TABLE `user` DISABLE KEYS */;
-INSERT INTO `user` (`id`, `company_id`, `full_name`, `user_id`, `password`, `role`, `status`, `mobile`) VALUES (2,1,'Estifanos Eskinder Assefa','Estifanos','827ccb0eea8a706c4c34a16891f84e7b','Admin',_binary '','0920523470'),(3,1,'Natnael Teklu Gebeyehu','Natnael','827ccb0eea8a706c4c34a16891f84e7b','Admin',_binary '',NULL),(4,1,'Fantahun Bishaw Hailu','Fantahun','e10adc3949ba59abbe56e057f20f883e','Agent',_binary '\0',''),(5,1,'Semahegn Kassie Tamer','Semahegn','827ccb0eea8a706c4c34a16891f84e7b','Agent',_binary '\0',NULL),(6,1,'Natinael Seifu Mengesha','Natinael','827ccb0eea8a706c4c34a16891f84e7b','Agent',_binary '','0911111111'),(7,3,'Abenezer Desta Zeleke','Abenezer','e10adc3949ba59abbe56e057f20f883e','Agent',_binary '\0','0939966486'),(9,5,'Eyerusalem Tesfaye Alemu','Eyerusalem','827ccb0eea8a706c4c34a16891f84e7b','Agent',_binary '','0930556565'),(10,2,'eyerusalm tadesseg','eyerus','NEW','Admin',_binary '','0365656565');
+INSERT INTO `user` (`id`, `company_id`, `full_name`, `user_id`, `password`, `role`, `status`, `mobile`) VALUES (2,1,'Estifanos Eskinder Assefa','Estifanos','827ccb0eea8a706c4c34a16891f84e7b','Admin',_binary '','0920523470'),(3,1,'Natnael Teklu Gebeyehu','Natnael','827ccb0eea8a706c4c34a16891f84e7b','Admin',_binary '',NULL),(4,1,'Fantahun Bishaw Hailu','Fantahun','e10adc3949ba59abbe56e057f20f883e','Agent',_binary '',''),(5,1,'Semahegn Kassie Tamer','Semahegn','827ccb0eea8a706c4c34a16891f84e7b','Agent',_binary '',''),(6,1,'Natinael Seifu Mengesha','Natinael','827ccb0eea8a706c4c34a16891f84e7b','Agent',_binary '','0911111111'),(7,3,'Abenezer Desta Zeleke','Abenezer','e10adc3949ba59abbe56e057f20f883e','Agent',_binary '\0','0939966486'),(10,2,'eyerusalm tadesseg','eyerus','e10adc3949ba59abbe56e057f20f883e','Agent',_binary '','0365656565');
 /*!40000 ALTER TABLE `user` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -186,7 +186,7 @@ CREATE TABLE `user_detail` (
 
 LOCK TABLES `user_detail` WRITE;
 /*!40000 ALTER TABLE `user_detail` DISABLE KEYS */;
-INSERT INTO `user_detail` (`id`, `user_id`, `temp_password`, `temp_pass_flag`, `wrong_pass_count`) VALUES (8,2,'f1887d3f9e6ee7a32fe5e76f4ab80d63',_binary '\0',0),(9,3,'827ccb0eea8a706c4c34a16891f84e7b',_binary '\0',0),(10,4,'827ccb0eea8a706c4c34a16891f84e7b',_binary '\0',0),(11,5,'827ccb0eea8a706c4c34a16891f84e7b',_binary '\0',0),(12,6,'827ccb0eea8a706c4c34a16891f84e7b',_binary '\0',0),(13,7,'2dba05bea3e8010380c4539dcf39c9eb',_binary '\0',0),(15,10,'e10adc3949ba59abbe56e057f20f883e',_binary '',0);
+INSERT INTO `user_detail` (`id`, `user_id`, `temp_password`, `temp_pass_flag`, `wrong_pass_count`) VALUES (8,2,'f1887d3f9e6ee7a32fe5e76f4ab80d63',_binary '\0',0),(9,3,'827ccb0eea8a706c4c34a16891f84e7b',_binary '\0',0),(10,4,'827ccb0eea8a706c4c34a16891f84e7b',_binary '\0',0),(11,5,'827ccb0eea8a706c4c34a16891f84e7b',_binary '\0',0),(12,6,'827ccb0eea8a706c4c34a16891f84e7b',_binary '\0',0),(13,7,'2dba05bea3e8010380c4539dcf39c9eb',_binary '\0',0),(15,10,'e10adc3949ba59abbe56e057f20f883e',_binary '\0',0);
 /*!40000 ALTER TABLE `user_detail` ENABLE KEYS */;
 UNLOCK TABLES;
 
@@ -228,4 +228,4 @@ UNLOCK TABLES;
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 
--- Dump completed on 2024-03-04  5:42:07
+-- Dump completed on 2024-03-06 10:44:35
