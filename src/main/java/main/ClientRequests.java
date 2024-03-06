@@ -11,6 +11,8 @@ public interface ClientRequests extends Remote {
 
     public String[] getDashboardInfo(int companyID) throws RemoteException, SQLException;
 
+    public String[] getDashboardAdmin(int companyID) throws RemoteException;
+
     public String greeting(int hour) throws RemoteException;
 
     public int registerParkingLot(String companyID, String parkingLotNO, String descrption) throws RemoteException;
@@ -37,5 +39,7 @@ public interface ClientRequests extends Remote {
     public int mandatoryPasswordChange(String newPassword, String id) throws RemoteException;
 
     public int registerUser(String username, String fullname, String password, String mobile, String role, String status, String company) throws RemoteException;
+
+    public int registerCompany(String companyName, String tinNo, String address1, String address2, String phoneNo, String feePerHr) throws RemoteException;
 
 }
