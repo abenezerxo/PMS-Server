@@ -1,5 +1,8 @@
 package main;
 
+import java.io.BufferedWriter;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.rmi.*;
 import java.rmi.registry.*;
 import java.rmi.server.*;
@@ -10,6 +13,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.Random;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -49,16 +53,17 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                     + "(SELECT COUNT(*) IN_VEHICLES FROM PARKED_CAR WHERE COMPANY_ID = " + companyID + " AND DATE_EXIT IS NULL) A,  /*IN VEHICLES*/\n"
                     + "(SELECT COUNT(*) OUT_VEHICLES FROM PARKED_CAR WHERE COMPANY_ID = " + companyID + " AND DATE_EXIT IS NOT NULL /*AND DATE(DATE_ENTRY)=CURDATE()*/) B,  /*OUT VEHICLES*/\n"
                     + "(SELECT COUNT(*) IN_OUT_VEHICLES FROM PARKED_CAR WHERE COMPANY_ID = " + companyID + " /*AND DATE(DATE_ENTRY)=CURDATE()*/ /* IN & OUT VEHICLES*/) C,"
-                    + "(SELECT FLOOR(FREE/TOTAL*100) PERCENT FROM ( "
+                    + "(SELECT IFNULL(FLOOR(FREE/TOTAL*100),0) PERCENT FROM ( "
                     + "SELECT COUNT(*) TOTAL "
                     + "FROM PARKING_LOT "
-                    + "WHERE COMPANY_ID = 1) A, "
+                    + "WHERE COMPANY_ID = " + companyID + ") A, "
                     + "(SELECT COUNT(*) FREE "
                     + "FROM PARKING_LOT "
                     + "WHERE COMPANY_ID = " + companyID + " "
                     + "  AND ID NOT IN (SELECT PARKING_LOT_ID "
                     + "             FROM PARKED_CAR WHERE COMPANY_ID = " + companyID + " "
                     + "             AND DATE_EXIT IS NULL) ) B ) D ";
+            System.out.println(sql);
             DatabaseConnection.getInstance().connectToDatabase();
             PreparedStatement ps = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
             ResultSet rs = ps.executeQuery();
@@ -539,10 +544,16 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                     + "join parking_lot pl on pc.parking_lot_id = pl.id "
                     + "Where pl.company_id = " + parameters[0] + " "
                     + "and code = '" + parameters[1] + "' "
-                    + "and license_plate = '" + parameters[2] + "' ";
+                    + "and license_plate = '" + parameters[2] + "' "
+                    + "and date_exit is null";
         } else if (what.equals("out_exit")) {
             sql = "select  CONCAT(first_name,' ',middle_name,' ',last_name) fullName, code, license_plate, d.tin customer_tin, date_entry, company_name, c.tin_number company_tin, "
-                    + "Address_1, Address_2, fee_per_hr, phone_no from parked_car pc "
+                    + "Address_1, Address_2, fee_per_hr, phone_no, "
+                    + "ROUND(TIMESTAMPDIFF(minute, date_entry,now())/60,1) hrs, "
+                    + "CASE when TIMESTAMPDIFF(hour, date_entry,now()) > 0 then "
+                    + "concat(floor(TIMESTAMPDIFF(minute, date_entry,now())/60),'hr ', mod(TIMESTAMPDIFF(minute, date_entry,now()),60),'min') "
+                    + "else concat(mod(TIMESTAMPDIFF(minute, date_entry,now()),60),'min') end duration  "
+                    + "from parked_car pc "
                     + "join vehicle v on pc.vehicle_id = v.id "
                     + "join driver d on v.driver_id = d.id "
                     + "join parking_lot pl on pc.parking_lot_id = pl.id "
@@ -573,7 +584,7 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                 while (rs.next()) {
                     arrayList.add(new Object[]{rs.getString("fullName"), rs.getString("code"), rs.getString("license_plate"), rs.getString("customer_tin"),
                         rs.getString("date_entry"), rs.getString("company_name"), rs.getString("company_tin"), rs.getString("Address_1"), rs.getString("Address_2"),
-                        rs.getString("fee_per_hr"), rs.getString("phone_no")});
+                        rs.getString("fee_per_hr"), rs.getString("phone_no"), rs.getString("hrs"), rs.getString("duration")});
                 }
             } else {
 
@@ -750,10 +761,12 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
 
     public ArrayList<Object> login(String username, String password) {
         ArrayList<Object> arrayList = new ArrayList<Object>();
-        String sql = "select u.*, ud.id user_detail_id, case when password = md5('" + password + "') then 'correct' else 'tempPassword' end correct "
+        String sql = "select u.*, ud.id user_detail_id, case when password = md5('" + password + "') then 'correct' else 'tempPassword' end correct, company_name "
                 + "from user u join user_detail ud on u.id = ud.user_id "
+                + "left join company c on u.company_id = c.id "
                 + "where u.user_id = '" + username + "' and password=md5('" + password + "') "
                 + "or (ud.temp_pass_flag = true and ud.temp_password = md5('" + password + "'))";
+        System.out.println(sql);
         ResultSet rs;
         try {
             DatabaseConnection.getInstance().connectToDatabase();
@@ -762,7 +775,7 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
 
             if (rs.next()) {
                 arrayList.add(new Object[]{rs.getString("id"), rs.getString("company_id"), rs.getString("user_id"), rs.getString("role"),
-                    rs.getString("status"), rs.getString("correct")});
+                    rs.getString("status"), rs.getString("correct"), rs.getString("company_name")});
 
                 /* Disable temp password (generated with forget pass) b/c user logged in with their original password */
                 if (rs.getString("status").equals("1") && rs.getString("correct").equals("correct")) {
@@ -788,8 +801,9 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
     }
 
     public String forgetPassword(String username) {
-        String sql = "select id from user where user_id = '" + username + "' ";
+        String sql = "select id, full_name, user_id, mobile from user where user_id = '" + username + "' ";
         String id = "";
+        String tempPassword = "";
         ResultSet rs;
         ResultSet rs2;
         try {
@@ -799,12 +813,14 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
             System.out.println(sql);
             if (rs.next()) {
                 id = rs.getString("id");
-                sql = "update user_detail set temp_password = md5('" + generatePassword() + "'), temp_pass_flag = true where user_id = " + id + " ";
+                tempPassword = generatePassword();
+                sql = "update user_detail set temp_password = md5('" + tempPassword + "'), temp_pass_flag = true where user_id = " + id + " ";
                 PreparedStatement ps2 = DatabaseConnection.getInstance().getConnection().prepareStatement(sql);
                 System.out.println(sql);
-                rs.close();
                 if (ps2.executeUpdate() > 0) {
                     ps2.close();
+                    createPasswordSMS(rs.getString("full_name"), rs.getString("user_id"), tempPassword, rs.getString("mobile"));
+                    rs.close();
                     return "success";
                 } else {
                     return "error";
@@ -848,5 +864,19 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
             pass.append(characterSet.charAt(index));
         }
         return pass.toString();
+    }
+
+    private void createPasswordSMS(String fullName, String username, String password, String mobileNo) {
+        String fileName = "Password-Reset-SMS\\" + new Date().getTime() + "_" + username + "_" + mobileNo + "_.txt"; // Name of the file to create
+
+        try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileName))) {
+            // Write content to the file
+            writer.write("Dear " + fullName + ", You PMS password is " + password);
+            writer.newLine();
+            writer.write("Please Reset it immediately!");
+
+        } catch (IOException e) {
+            System.err.println("Error writing to the file: " + e.getMessage());
+        }
     }
 }
