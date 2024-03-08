@@ -3,6 +3,9 @@ package main;
 import java.io.BufferedWriter;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.NetworkInterface;
+import java.net.SocketException;
 import java.rmi.*;
 import java.rmi.registry.*;
 import java.rmi.server.*;
@@ -14,6 +17,7 @@ import java.sql.Statement;
 
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Enumeration;
 import java.util.Random;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -28,22 +32,57 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
     public Server() throws RemoteException {
     }
 
-    public static void main(String arg[]) throws SQLException, RemoteException {
+    public static void main(String[] args) {
+        startServer();
+        initializeUI();
+    }
+
+    public static void initializeUI() {
+        // Display the IP Address of the server
+        ServerUI UI = new ServerUI();
+        
+        String ipAddress = getServerIp();
+        UI.lbIpAddress.setText(ipAddress);
+        UI.lbIpAddress2.setText(ipAddress);
+        UI.setVisible(true);
+    }
+
+    private static void startServer() {
+
         try {
             Server obj = new Server();
             Registry Registry = LocateRegistry.createRegistry(port);
             Registry.rebind(requestEndPoint, obj);
-            System.out.println("Server is Ready & Running @Port " + port + " ...");
-
-        } catch (Exception e) {
-            System.err.println("Server exception:" + e.toString());
+        } catch (RemoteException e) {
+            System.err.println("Server exception: " + e.toString());
             e.printStackTrace();
         }
     }
 
-    public String registerClient() {
-        /* Test Connection */
-        return "I am ready to Register a client!";
+    private static String getServerIp() {
+        String ipAddress = "localhost";
+        try {
+            Enumeration<NetworkInterface> interfaces = NetworkInterface.getNetworkInterfaces();
+            while (interfaces.hasMoreElements()) {
+                NetworkInterface iface = interfaces.nextElement();
+                // filters out 127.0.0.1 and inactive interfaces
+                if (iface.isLoopback() || !iface.isUp()) {
+                    continue;
+                }
+
+                Enumeration<InetAddress> addresses = iface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    InetAddress addr = addresses.nextElement();
+                    if (addr.getHostAddress().length() <= 15) {//if a proper ip adress is found
+                        ipAddress = addr.getHostAddress();
+                    }
+                    //System.out.println(iface.getDisplayName() + " " + ipAddress);
+                }
+            }
+        } catch (SocketException e) {
+            throw new RuntimeException(e);
+        }
+        return ipAddress;
     }
 
     public String[] getDashboardInfo(int companyID) {

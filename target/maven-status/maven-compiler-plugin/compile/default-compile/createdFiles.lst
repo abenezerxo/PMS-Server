@@ -1,3 +1,6 @@
+main\ClientRequests.class
+main\ServerUI$1.class
+main\ServerUI$2.class
+main\ServerUI.class
 pms\database\DatabaseConnection.class
 main\Server.class
-main\ClientRequests.class

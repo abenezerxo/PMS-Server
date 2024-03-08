@@ -7,8 +7,6 @@ import java.util.ArrayList;
 
 public interface ClientRequests extends Remote {
 
-    public String registerClient() throws RemoteException;
-
     public String[] getDashboardInfo(int companyID) throws RemoteException, SQLException;
 
     public String[] getDashboardAdmin(int companyID) throws RemoteException;
