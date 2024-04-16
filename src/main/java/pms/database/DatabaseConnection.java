@@ -2,37 +2,41 @@ package pms.database;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import main.DatabaseConfig;
 
 public class DatabaseConnection {
+
     private static DatabaseConnection instance;
     private Connection connection;
-    
-    public static DatabaseConnection getInstance(){
-        if (instance == null){
+
+    public static DatabaseConnection getInstance() {
+        if (instance == null) {
             instance = new DatabaseConnection();
         }
         return instance;
     }
-    
-    private DatabaseConnection(){
-        
+
+    private DatabaseConnection() {
+
     }
-    
-    public void connectToDatabase() throws SQLException{
-        String server = "localhost";
-        String port = "3306";
+
+    public void connectToDatabase() throws SQLException {
+
+        String server = DatabaseConfig.addressFromFile;
+        String userName = DatabaseConfig.usernameFromFile;
+        String password = DatabaseConfig.passwordFromFile;
+        String port = DatabaseConfig.portFromFile;
         String database = "pms";
-        String userName = "root";
-        String password = "root@1234@pms";
+
         connection = java.sql.DriverManager.getConnection("jdbc:mysql://" + server + ":" + port + "/" + database, userName, password);
     }
-    
-    public Connection getConnection(){
+
+    public Connection getConnection() {
         return connection;
     }
-    
-    public void setConnection (Connection connection){
+
+    public void setConnection(Connection connection) {
         this.connection = connection;
     }
-    
+
 }

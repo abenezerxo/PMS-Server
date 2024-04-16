@@ -40,11 +40,16 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
     public static void initializeUI() {
         // Display the IP Address of the server
         ServerUI UI = new ServerUI();
-        
+
         String ipAddress = getServerIp();
         UI.lbIpAddress.setText(ipAddress);
         UI.lbIpAddress2.setText(ipAddress);
         UI.setVisible(true);
+
+        DatabaseConfig dcg = new DatabaseConfig();
+        if (!DatabaseConfig.isConnectionSuccess) {
+            dcg.setVisible(true);
+        }
     }
 
     private static void startServer() {
@@ -57,6 +62,7 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
             System.err.println("Server exception: " + e.toString());
             e.printStackTrace();
         }
+
     }
 
     private static String getServerIp() {
@@ -703,7 +709,7 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
                 result = ps1.executeUpdate();
 
                 ps2 = DatabaseConnection.getInstance().getConnection().prepareStatement(parkingSql);
-                result = ps1.executeUpdate();
+                result = ps2.executeUpdate();
 
                 ps1.close();
                 ps2.close();
@@ -917,5 +923,16 @@ public class Server extends UnicastRemoteObject implements ClientRequests {
         } catch (IOException e) {
             System.err.println("Error writing to the file: " + e.getMessage());
         }
+    }
+    
+    public boolean testDbConnection (){
+        try {
+            if(DatabaseConnection.getInstance().getConnection()== null){
+            return false;
+        }
+        return true;
+        } catch (Exception e) {
+        }
+        return false;
     }
 }
